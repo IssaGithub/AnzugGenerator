@@ -72,3 +72,32 @@ flutter run \
 Optional:
 - `--dart-define=SMTP_USE_SSL=true`
 - `--dart-define=SMTP_ALLOW_INSECURE=true`
+
+## Virtual Fitting (KI-Bildgenerierung)
+
+Die App hat einen eigenen Schritt **Virtual Fitting**:
+- Kundenfoto aus Galerie/Kamera waehlen
+- KI-Vorschaubild mit Anzug/Accessoire-Kontext erzeugen
+- Ergebnis in der Zusammenfassung anzeigen
+- Ergebnisbild wird (falls vorhanden) mit der E-Mail mitgesendet
+
+Konfiguration per `--dart-define`:
+
+```bash
+flutter run \
+  --dart-define=VIRTUAL_FIT_API_URL=https://dein-endpoint.example/api/virtual-fitting \
+  --dart-define=VIRTUAL_FIT_API_KEY=dein-api-key \
+  --dart-define=VIRTUAL_FIT_MODEL=virtual-fitting-v1
+```
+
+### Erwartetes API-Format
+
+`POST` Multipart mit:
+- `customer_image` (Datei)
+- `prompt` (String)
+- `model` (String)
+
+Erwartete Antwortvarianten:
+- Bild direkt als `image/*`
+- JSON mit `imageUrl` / `image_url` / `url`
+- JSON mit `imageBase64` / `image_base64` / `b64_json`

@@ -39,6 +39,7 @@ class EmailService {
   Future<void> sendOrderConfirmation({
     required SuitOrder order,
     required Uint8List signatureBytes,
+    Uint8List? virtualFittingBytes,
     required String summaryText,
   }) async {
     if (!isConfigured) {
@@ -51,8 +52,14 @@ class EmailService {
     final signatureFile = File(
       '${tempDirectory.path}/signature_${order.createdAt.millisecondsSinceEpoch}.png',
     );
+    final fittingFile = File(
+      '${tempDirectory.path}/virtual_fitting_${order.createdAt.millisecondsSinceEpoch}.png',
+    );
 
     await signatureFile.writeAsBytes(signatureBytes, flush: true);
+    if (virtualFittingBytes != null && virtualFittingBytes.isNotEmpty) {
+      await fittingFile.writeAsBytes(virtualFittingBytes, flush: true);
+    }
 
     final smtpServer = SmtpServer(
       smtpHost,
@@ -63,13 +70,22 @@ class EmailService {
       allowInsecure: allowInsecure,
     );
 
+    final hasFittingAttachment = await fittingFile.exists();
+    final attachmentHint = hasFittingAttachment
+        ? 'Signaturdatei und Virtual-Fitting-Vorschau sind als Anhang enthalten.'
+        : 'Signaturdatei ist als Anhang enthalten.';
+
     final message = Message()
       ..from = Address(smtpUsername, senderName)
       ..recipients.add(order.customerEmail)
       ..ccRecipients.add(sellerEmail)
       ..subject = 'Ihre Anzug-Konfiguration (${order.customerName})'
-      ..text = '$summaryText\n\nSignaturdatei ist als Anhang enthalten.'
+      ..text = '$summaryText\n\n$attachmentHint'
       ..attachments.add(FileAttachment(signatureFile));
+
+    if (hasFittingAttachment) {
+      message.attachments.add(FileAttachment(fittingFile));
+    }
 
     try {
       await send(message, smtpServer);
@@ -78,6 +94,9 @@ class EmailService {
     } finally {
       if (await signatureFile.exists()) {
         await signatureFile.delete();
+      }
+      if (await fittingFile.exists()) {
+        await fittingFile.delete();
       }
     }
   }

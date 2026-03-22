@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:signature/signature.dart';
 
 import 'data/suit_config_template.dart';
@@ -8,6 +9,7 @@ import 'models/config_field.dart';
 import 'models/suit_order.dart';
 import 'services/email_service.dart';
 import 'services/order_summary_builder.dart';
+import 'services/virtual_fitting_service.dart';
 
 const _smtpHost = String.fromEnvironment(
   'SMTP_HOST',
@@ -25,6 +27,18 @@ const _smtpUseSsl = bool.fromEnvironment('SMTP_USE_SSL', defaultValue: false);
 const _smtpAllowInsecure = bool.fromEnvironment(
   'SMTP_ALLOW_INSECURE',
   defaultValue: false,
+);
+const _virtualFitApiUrl = String.fromEnvironment(
+  'VIRTUAL_FIT_API_URL',
+  defaultValue: '',
+);
+const _virtualFitApiKey = String.fromEnvironment(
+  'VIRTUAL_FIT_API_KEY',
+  defaultValue: '',
+);
+const _virtualFitModel = String.fromEnvironment(
+  'VIRTUAL_FIT_MODEL',
+  defaultValue: 'virtual-fitting-v1',
 );
 
 void main() {
@@ -55,7 +69,7 @@ class SuitConfiguratorPage extends StatefulWidget {
 }
 
 class _SuitConfiguratorPageState extends State<SuitConfiguratorPage> {
-  static const _lastStepIndex = 2;
+  static const _lastStepIndex = 3;
 
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
@@ -65,11 +79,18 @@ class _SuitConfiguratorPageState extends State<SuitConfiguratorPage> {
 
   late final SignatureController _signatureController;
   late final EmailService _emailService;
+  late final VirtualFittingService _virtualFittingService;
+  final _imagePicker = ImagePicker();
   late Map<String, String> _selectedValues;
 
   int _currentStep = 0;
   bool _isSending = false;
+  bool _isGeneratingFitting = false;
   int _formVersion = 0;
+  Uint8List? _customerImageBytes;
+  Uint8List? _generatedFittingImageBytes;
+  String? _customerImageName;
+  String? _fittingSourceUrl;
 
   @override
   void initState() {
@@ -87,6 +108,11 @@ class _SuitConfiguratorPageState extends State<SuitConfiguratorPage> {
       senderName: _senderName,
       useSsl: _smtpUseSsl,
       allowInsecure: _smtpAllowInsecure,
+    );
+    _virtualFittingService = VirtualFittingService(
+      endpointUrl: _virtualFitApiUrl,
+      apiKey: _virtualFitApiKey,
+      model: _virtualFitModel,
     );
     _selectedValues = {
       for (final field in allConfigFields)
@@ -116,12 +142,12 @@ class _SuitConfiguratorPageState extends State<SuitConfiguratorPage> {
           key: _formKey,
           child: Stepper(
             currentStep: _currentStep,
-            onStepTapped: _isSending
+            onStepTapped: _isSending || _isGeneratingFitting
                 ? null
                 : (step) => setState(() {
                     _currentStep = step;
                   }),
-            onStepContinue: _isSending
+            onStepContinue: _isSending || _isGeneratingFitting
                 ? null
                 : () {
                     if (_currentStep == _lastStepIndex) {
@@ -132,7 +158,7 @@ class _SuitConfiguratorPageState extends State<SuitConfiguratorPage> {
                       });
                     }
                   },
-            onStepCancel: _isSending || _currentStep == 0
+            onStepCancel: _isSending || _isGeneratingFitting || _currentStep == 0
                 ? null
                 : () {
                     setState(() {
@@ -144,7 +170,9 @@ class _SuitConfiguratorPageState extends State<SuitConfiguratorPage> {
               return Row(
                 children: [
                   ElevatedButton(
-                    onPressed: _isSending ? null : details.onStepContinue,
+                    onPressed: _isSending || _isGeneratingFitting
+                        ? null
+                        : details.onStepContinue,
                     child: Text(
                       isLastStep
                           ? (_isSending
@@ -156,7 +184,9 @@ class _SuitConfiguratorPageState extends State<SuitConfiguratorPage> {
                   const SizedBox(width: 12),
                   if (_currentStep > 0)
                     TextButton(
-                      onPressed: _isSending ? null : details.onStepCancel,
+                      onPressed: _isSending || _isGeneratingFitting
+                          ? null
+                          : details.onStepCancel,
                       child: const Text('Zurueck'),
                     ),
                 ],
@@ -176,8 +206,14 @@ class _SuitConfiguratorPageState extends State<SuitConfiguratorPage> {
                 content: _buildConfigurationStep(),
               ),
               Step(
-                title: const Text('Zusammenfassung und Signatur'),
+                title: const Text('Virtual Fitting'),
                 isActive: _currentStep >= 2,
+                state: _currentStep > 2 ? StepState.complete : StepState.indexed,
+                content: _buildVirtualFittingStep(),
+              ),
+              Step(
+                title: const Text('Zusammenfassung und Signatur'),
+                isActive: _currentStep >= 3,
                 content: _buildSummaryStep(),
               ),
             ],
@@ -328,6 +364,147 @@ class _SuitConfiguratorPageState extends State<SuitConfiguratorPage> {
     );
   }
 
+  Widget _buildVirtualFittingStep() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Laden Sie ein Kundenfoto hoch. Die App erzeugt daraus eine '
+          'KI-Vorschau mit passender Anzug-Konfiguration.',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            ElevatedButton.icon(
+              onPressed: _isGeneratingFitting
+                  ? null
+                  : () => _pickCustomerImage(ImageSource.gallery),
+              icon: const Icon(Icons.photo_library_outlined),
+              label: const Text('Foto waehlen'),
+            ),
+            const SizedBox(width: 12),
+            OutlinedButton.icon(
+              onPressed: _isGeneratingFitting
+                  ? null
+                  : () => _pickCustomerImage(ImageSource.camera),
+              icon: const Icon(Icons.photo_camera_outlined),
+              label: const Text('Kamera'),
+            ),
+          ],
+        ),
+        if (_customerImageName != null) ...[
+          const SizedBox(height: 8),
+          Text('Ausgewaehlte Datei: $_customerImageName'),
+        ],
+        const SizedBox(height: 12),
+        if (_customerImageBytes != null)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.memory(
+              _customerImageBytes!,
+              width: double.infinity,
+              height: 220,
+              fit: BoxFit.cover,
+            ),
+          )
+        else
+          _buildPlaceholderBox(
+            icon: Icons.person_outline,
+            text: 'Noch kein Kundenfoto ausgewaehlt',
+          ),
+        const SizedBox(height: 12),
+        if (!_virtualFittingService.isConfigured)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.amber.shade100,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.amber.shade700),
+            ),
+            child: const Text(
+              'Virtual Fitting API ist nicht konfiguriert. '
+              'Setzen Sie --dart-define fuer VIRTUAL_FIT_API_URL, '
+              'VIRTUAL_FIT_API_KEY und optional VIRTUAL_FIT_MODEL.',
+            ),
+          ),
+        const SizedBox(height: 12),
+        ElevatedButton.icon(
+          onPressed: _customerImageBytes == null ||
+                  _isGeneratingFitting ||
+                  !_virtualFittingService.isConfigured
+              ? null
+              : _generateFittingImage,
+          icon: _isGeneratingFitting
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.auto_awesome),
+          label: Text(
+            _isGeneratingFitting ? 'Generiere...' : 'KI-Bild generieren',
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (_generatedFittingImageBytes != null) ...[
+          Text(
+            'Generierte Vorschau',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.memory(
+              _generatedFittingImageBytes!,
+              width: double.infinity,
+              height: 280,
+              fit: BoxFit.cover,
+            ),
+          ),
+          if (_fittingSourceUrl != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Quelle: $_fittingSourceUrl',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ] else
+          _buildPlaceholderBox(
+            icon: Icons.style_outlined,
+            text: 'Noch keine KI-Vorschau erzeugt',
+          ),
+      ],
+    );
+  }
+
+  Widget _buildPlaceholderBox({
+    required IconData icon,
+    required String text,
+  }) {
+    return Container(
+      width: double.infinity,
+      height: 180,
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade400),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      alignment: Alignment.center,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 36, color: Colors.grey.shade600),
+          const SizedBox(height: 8),
+          Text(
+            text,
+            style: TextStyle(color: Colors.grey.shade700),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSummaryStep() {
     final order = _buildCurrentOrder();
     final summary = buildOrderSummary(order, fieldLabels: configFieldLabels);
@@ -349,6 +526,27 @@ class _SuitConfiguratorPageState extends State<SuitConfiguratorPage> {
           ),
           child: SelectableText(summary),
         ),
+        const SizedBox(height: 16),
+        Text(
+          'Virtual Fitting Vorschau',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 8),
+        if (_generatedFittingImageBytes != null)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.memory(
+              _generatedFittingImageBytes!,
+              width: double.infinity,
+              height: 240,
+              fit: BoxFit.cover,
+            ),
+          )
+        else
+          _buildPlaceholderBox(
+            icon: Icons.image_not_supported_outlined,
+            text: 'Keine Virtual-Fitting Vorschau vorhanden',
+          ),
         const SizedBox(height: 16),
         Text(
           'Unterschrift',
@@ -409,6 +607,100 @@ class _SuitConfiguratorPageState extends State<SuitConfiguratorPage> {
     );
   }
 
+  Future<void> _pickCustomerImage(ImageSource source) async {
+    try {
+      final image = await _imagePicker.pickImage(
+        source: source,
+        maxWidth: 1280,
+        imageQuality: 90,
+      );
+
+      if (image == null) {
+        return;
+      }
+
+      final bytes = await image.readAsBytes();
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _customerImageBytes = bytes;
+        _customerImageName = image.name;
+        _generatedFittingImageBytes = null;
+        _fittingSourceUrl = null;
+      });
+    } catch (error) {
+      _showMessage('Foto konnte nicht geladen werden: $error');
+    }
+  }
+
+  Future<void> _generateFittingImage() async {
+    final customerImageBytes = _customerImageBytes;
+    if (customerImageBytes == null || customerImageBytes.isEmpty) {
+      _showMessage('Bitte zuerst ein Kundenfoto auswaehlen.');
+      return;
+    }
+    if (!_virtualFittingService.isConfigured) {
+      _showMessage(
+        'Virtual Fitting API ist nicht konfiguriert. '
+        'Bitte --dart-define Werte setzen.',
+      );
+      return;
+    }
+
+    setState(() {
+      _isGeneratingFitting = true;
+    });
+
+    try {
+      final result = await _virtualFittingService.generateFittingImage(
+        customerPhotoBytes: customerImageBytes,
+        prompt: _buildVirtualFittingPrompt(),
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _generatedFittingImageBytes = result.imageBytes;
+        _fittingSourceUrl = result.sourceUrl;
+      });
+      _showMessage('Virtual Fitting Bild erstellt.');
+    } on VirtualFittingConfigurationException catch (error) {
+      _showMessage(error.message);
+    } on VirtualFittingRequestException catch (error) {
+      _showMessage(error.message);
+    } catch (error) {
+      _showMessage('Virtual Fitting fehlgeschlagen: $error');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isGeneratingFitting = false;
+        });
+      }
+    }
+  }
+
+  String _buildVirtualFittingPrompt() {
+    final jacketFit = _selectedValues['jacket_fit'] ?? 'Modern Fit';
+    final jacketColor = _selectedValues['jacket_color'] ?? 'Navy';
+    final lapelStyle = _selectedValues['lapel_style'] ?? 'Fallendes Revers';
+    final tieProcessing = _selectedValues['tie_processing'] ?? 'Tipped';
+    final tieWidth = _selectedValues['tie_width'] ?? '8 cm';
+    final bowTie = _selectedValues['bow_tie_processing'] ?? 'Vorgebunden';
+
+    return '''
+Erstelle ein realistisches Virtual-Fitting Bild auf Basis des Kundenfotos.
+Kleidung: Herrenanzug.
+Sakko-Passform: $jacketFit.
+Sakko-Farbe: $jacketColor.
+Revers: $lapelStyle.
+Accessoires: Krawatte ($tieProcessing, $tieWidth) und Fliege-Option ($bowTie).
+Wichtig: Identitaet, Gesichtszuege und Pose des Kunden beibehalten.
+Foto-realistisch, studio light, hochwertige Texturen.
+''';
+  }
+
   Future<void> _sendOrder() async {
     if (!_formKey.currentState!.validate()) {
       setState(() {
@@ -440,6 +732,7 @@ class _SuitConfiguratorPageState extends State<SuitConfiguratorPage> {
       await _emailService.sendOrderConfirmation(
         order: order,
         signatureBytes: Uint8List.fromList(signatureBytes),
+        virtualFittingBytes: _generatedFittingImageBytes,
         summaryText: summary,
       );
       if (!mounted) {
@@ -476,6 +769,11 @@ class _SuitConfiguratorPageState extends State<SuitConfiguratorPage> {
               ? field.options.first
               : '',
       };
+      _customerImageBytes = null;
+      _generatedFittingImageBytes = null;
+      _customerImageName = null;
+      _fittingSourceUrl = null;
+      _isGeneratingFitting = false;
       _currentStep = 0;
       _formVersion += 1;
     });
