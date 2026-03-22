@@ -41,7 +41,7 @@ jobs:
       - name: Build Flutter web for Pages
         run: |
           REPO_NAME="${GITHUB_REPOSITORY#*/}"
-          flutter build web --release --base-href "/${REPO_NAME}/"
+          flutter build web --release --pwa-strategy=none --base-href "/${REPO_NAME}/"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

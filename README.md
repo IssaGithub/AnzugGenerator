@@ -48,6 +48,7 @@ Es gibt einen Workflow fuer Deployment nach GitHub Pages:
   - Wenn der Branch durch Environment-Policy nicht freigegeben ist, wird ein Fallback-Deploy ohne Environment-Gate versucht
   - Wenn GitHub Pages deaktiviert ist, wird Deploy sauber geskippt (kein Pipeline-Fehler)
   - Auf `main`: Build + echtes Deployment auf GitHub Pages
+  - Web-Build nutzt `--pwa-strategy=none`, damit neue Releases ohne Service-Worker-Stale-Cache sichtbar werden
 
 Nach einem erfolgreichen Run ist die App unter folgender URL erreichbar:
 `https://issagithub.github.io/AnzugGenerator/`
