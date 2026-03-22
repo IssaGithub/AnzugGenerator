@@ -28,17 +28,17 @@ const _smtpAllowInsecure = bool.fromEnvironment(
   'SMTP_ALLOW_INSECURE',
   defaultValue: false,
 );
-const _virtualFitApiUrl = String.fromEnvironment(
-  'VIRTUAL_FIT_API_URL',
-  defaultValue: '',
-);
 const _virtualFitApiKey = String.fromEnvironment(
   'VIRTUAL_FIT_API_KEY',
   defaultValue: '',
 );
 const _virtualFitModel = String.fromEnvironment(
   'VIRTUAL_FIT_MODEL',
-  defaultValue: 'virtual-fitting-v1',
+  defaultValue: 'fal-ai/flux-kontext/dev',
+);
+const _virtualFitGenerationPassword = String.fromEnvironment(
+  'VIRTUAL_FIT_GENERATION_PASSWORD',
+  defaultValue: '',
 );
 
 void main() {
@@ -91,6 +91,7 @@ class _SuitConfiguratorPageState extends State<SuitConfiguratorPage> {
   Uint8List? _generatedFittingImageBytes;
   String? _customerImageName;
   String? _fittingSourceUrl;
+  bool _isFittingGenerationUnlocked = false;
 
   @override
   void initState() {
@@ -110,9 +111,8 @@ class _SuitConfiguratorPageState extends State<SuitConfiguratorPage> {
       allowInsecure: _smtpAllowInsecure,
     );
     _virtualFittingService = VirtualFittingService(
-      endpointUrl: _virtualFitApiUrl,
       apiKey: _virtualFitApiKey,
-      model: _virtualFitModel,
+      modelEndpointId: _virtualFitModel,
     );
     _selectedValues = {
       for (final field in allConfigFields)
@@ -424,13 +424,14 @@ class _SuitConfiguratorPageState extends State<SuitConfiguratorPage> {
               border: Border.all(color: Colors.lightBlue.shade300),
             ),
             child: const Text(
-              'Virtual Fitting API ist nicht konfiguriert. '
+              'fal.ai ist nicht konfiguriert. '
               'Es wird automatisch der Demo-Modus verwendet. '
               'Fuer echte KI-Generierung setzen Sie --dart-define '
-              'fuer VIRTUAL_FIT_API_URL, VIRTUAL_FIT_API_KEY und optional '
-              'VIRTUAL_FIT_MODEL.',
+              'fuer VIRTUAL_FIT_API_KEY und optional VIRTUAL_FIT_MODEL.',
             ),
           ),
+        const SizedBox(height: 12),
+        _buildGenerationSecurityStatusCard(),
         const SizedBox(height: 12),
         ElevatedButton.icon(
           onPressed: _customerImageBytes == null || _isGeneratingFitting
@@ -504,6 +505,59 @@ class _SuitConfiguratorPageState extends State<SuitConfiguratorPage> {
             text,
             style: TextStyle(color: Colors.grey.shade700),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGenerationSecurityStatusCard() {
+    final passwordConfigured = _virtualFitGenerationPassword.trim().isNotEmpty;
+    Color backgroundColor;
+    Color borderColor;
+    String message;
+    IconData icon;
+
+    if (!passwordConfigured) {
+      backgroundColor = Colors.amber.shade100;
+      borderColor = Colors.amber.shade700;
+      message = 'Sicherheitscheck ist aktiv, aber kein Passwort ist konfiguriert. '
+          'Setzen Sie --dart-define=VIRTUAL_FIT_GENERATION_PASSWORD=...';
+      icon = Icons.warning_amber_rounded;
+    } else if (_isFittingGenerationUnlocked) {
+      backgroundColor = Colors.green.shade50;
+      borderColor = Colors.green.shade400;
+      message = 'Sicherheitscheck erfolgreich. KI-Bildgenerierung ist freigeschaltet.';
+      icon = Icons.verified_user_outlined;
+    } else {
+      backgroundColor = Colors.orange.shade50;
+      borderColor = Colors.orange.shade400;
+      message = 'Vor der Bildgenerierung ist ein Passwort-Sicherheitscheck erforderlich.';
+      icon = Icons.lock_outline;
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: borderColor),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon),
+          const SizedBox(width: 8),
+          Expanded(child: Text(message)),
+          if (!_isFittingGenerationUnlocked)
+            TextButton(
+              onPressed: _isGeneratingFitting
+                  ? null
+                  : () async {
+                      await _ensureFittingGenerationUnlocked();
+                    },
+              child: const Text('Passwort eingeben'),
+            ),
         ],
       ),
     );
@@ -639,10 +693,83 @@ class _SuitConfiguratorPageState extends State<SuitConfiguratorPage> {
     }
   }
 
+  Future<bool> _ensureFittingGenerationUnlocked() async {
+    if (_isFittingGenerationUnlocked) {
+      return true;
+    }
+
+    final configuredPassword = _virtualFitGenerationPassword.trim();
+    if (configuredPassword.isEmpty) {
+      _showMessage(
+        'Sicherheitscheck ist nicht konfiguriert. '
+        'Bitte VIRTUAL_FIT_GENERATION_PASSWORD setzen.',
+      );
+      return false;
+    }
+
+    final enteredPassword = await _promptGenerationPassword();
+    if (enteredPassword == null) {
+      return false;
+    }
+    if (enteredPassword != configuredPassword) {
+      _showMessage('Falsches Passwort. Bildgenerierung abgebrochen.');
+      return false;
+    }
+    if (!mounted) {
+      return false;
+    }
+
+    setState(() {
+      _isFittingGenerationUnlocked = true;
+    });
+    _showMessage('Sicherheitscheck erfolgreich.');
+    return true;
+  }
+
+  Future<String?> _promptGenerationPassword() async {
+    final controller = TextEditingController();
+    try {
+      return await showDialog<String>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Sicherheitscheck'),
+            content: TextField(
+              controller: controller,
+              autofocus: true,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Passwort',
+                border: OutlineInputBorder(),
+              ),
+              onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Abbrechen'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+                child: const Text('Pruefen'),
+              ),
+            ],
+          );
+        },
+      );
+    } finally {
+      controller.dispose();
+    }
+  }
+
   Future<void> _generateFittingImage() async {
     final customerImageBytes = _customerImageBytes;
     if (customerImageBytes == null || customerImageBytes.isEmpty) {
       _showMessage('Bitte zuerst ein Kundenfoto auswaehlen.');
+      return;
+    }
+    final hasAccess = await _ensureFittingGenerationUnlocked();
+    if (!hasAccess) {
       return;
     }
 
@@ -787,6 +914,7 @@ Foto-realistisch, studio light, hochwertige Texturen.
       _generatedFittingImageBytes = null;
       _customerImageName = null;
       _fittingSourceUrl = null;
+      _isFittingGenerationUnlocked = false;
       _isGeneratingFitting = false;
       _currentStep = 0;
       _formVersion += 1;

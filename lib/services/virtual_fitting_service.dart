@@ -5,20 +5,23 @@ import 'package:http/http.dart' as http;
 
 class VirtualFittingService {
   VirtualFittingService({
-    required this.endpointUrl,
     required this.apiKey,
-    required this.model,
+    required this.modelEndpointId,
+    this.queueBaseUrl = 'https://queue.fal.run',
   });
 
-  final String endpointUrl;
   final String apiKey;
-  final String model;
+  final String modelEndpointId;
+  final String queueBaseUrl;
 
   bool get isConfigured {
-    if (endpointUrl.trim().isEmpty) {
+    if (apiKey.trim().isEmpty) {
       return false;
     }
-    final uri = Uri.tryParse(endpointUrl);
+    if (modelEndpointId.trim().isEmpty) {
+      return false;
+    }
+    final uri = Uri.tryParse(queueBaseUrl);
     return uri != null && uri.hasScheme && uri.host.isNotEmpty;
   }
 
@@ -28,65 +31,57 @@ class VirtualFittingService {
   }) async {
     if (!isConfigured) {
       throw const VirtualFittingConfigurationException(
-        'Virtual Fitting API ist nicht konfiguriert. '
-        'Bitte VIRTUAL_FIT_API_URL setzen.',
+        'Virtual Fitting ist nicht konfiguriert. '
+        'Bitte VIRTUAL_FIT_API_KEY und optional VIRTUAL_FIT_MODEL setzen.',
       );
     }
 
-    final uri = Uri.parse(endpointUrl);
-    final request = http.MultipartRequest('POST', uri)
-      ..fields['prompt'] = prompt
-      ..fields['model'] = model
-      ..files.add(
-        http.MultipartFile.fromBytes(
-          'customer_image',
-          customerPhotoBytes,
-          filename: 'customer_photo.jpg',
-        ),
-      );
+    final queueEndpoint = _buildQueueEndpointUri();
+    final submitResponse = await http.post(
+      queueEndpoint,
+      headers: _buildJsonHeaders(),
+      body: jsonEncode({
+        'prompt': prompt,
+        'image_url': _buildDataUri(customerPhotoBytes),
+        'output_format': 'png',
+        'resolution_mode': 'match_input',
+        'enable_safety_checker': true,
+      }),
+    );
 
-    if (apiKey.trim().isNotEmpty) {
-      request.headers['Authorization'] = 'Bearer $apiKey';
-      request.headers['x-api-key'] = apiKey;
-    }
-
-    final streamedResponse = await request.send();
-    final response = await http.Response.fromStream(streamedResponse);
-
-    if (response.statusCode < 200 || response.statusCode >= 300) {
+    if (submitResponse.statusCode < 200 || submitResponse.statusCode >= 300) {
       throw VirtualFittingRequestException(
-        'Virtual Fitting API Fehler (${response.statusCode}): '
-        '${response.body}',
+        'fal.ai Anfrage fehlgeschlagen (${submitResponse.statusCode}): '
+        '${submitResponse.body}',
       );
     }
 
-    final contentType = response.headers['content-type'] ?? '';
-    if (contentType.startsWith('image/')) {
-      return VirtualFittingResult(
-        imageBytes: response.bodyBytes,
-        sourceUrl: null,
-      );
-    }
-
-    final decoded = jsonDecode(response.body);
-    if (decoded is! Map<String, dynamic>) {
+    final submitJson = _decodeObject(submitResponse.body);
+    final requestId = _readString(submitJson, const ['request_id']);
+    if (requestId == null || requestId.isEmpty) {
       throw const VirtualFittingRequestException(
-        'Unerwartete API-Antwort: JSON-Objekt erwartet.',
+        'fal.ai Antwort ohne request_id erhalten.',
       );
     }
 
-    final directBase64 = _extractBase64(decoded);
-    if (directBase64 != null && directBase64.isNotEmpty) {
-      return VirtualFittingResult(
-        imageBytes: base64Decode(directBase64),
-        sourceUrl: null,
+    final status = _readString(submitJson, const ['status']) ?? 'IN_QUEUE';
+    if (status != 'COMPLETED') {
+      await _pollUntilCompleted(
+        requestId: requestId,
+        statusUrl: _readString(submitJson, const ['status_url']),
       );
     }
 
-    final imageUrl = _extractImageUrl(decoded);
+    final resultMap = await _fetchResult(
+      requestId: requestId,
+      responseUrl: _readString(submitJson, const ['response_url']),
+    );
+    final imageUrl = _extractImageUrl(resultMap);
+
     if (imageUrl == null || imageUrl.isEmpty) {
-      throw const VirtualFittingRequestException(
-        'Kein Bild in API-Antwort gefunden (erwartet: imageUrl oder imageBase64).',
+      throw VirtualFittingRequestException(
+        'Kein Bild in der fal.ai Antwort gefunden. '
+        'Antwort: ${jsonEncode(resultMap)}',
       );
     }
 
@@ -102,6 +97,85 @@ class VirtualFittingService {
       imageBytes: imageResponse.bodyBytes,
       sourceUrl: imageUrl,
     );
+  }
+
+  Uri _buildQueueEndpointUri() {
+    final normalizedBase = queueBaseUrl.endsWith('/')
+        ? queueBaseUrl.substring(0, queueBaseUrl.length - 1)
+        : queueBaseUrl;
+    final normalizedModel = modelEndpointId.startsWith('/')
+        ? modelEndpointId.substring(1)
+        : modelEndpointId;
+    return Uri.parse('$normalizedBase/$normalizedModel');
+  }
+
+  Map<String, String> _buildJsonHeaders() {
+    return {
+      'Authorization': 'Key ${apiKey.trim()}',
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+  }
+
+  Future<void> _pollUntilCompleted({
+    required String requestId,
+    required String? statusUrl,
+  }) async {
+    final statusUri = statusUrl != null && statusUrl.isNotEmpty
+        ? Uri.parse(statusUrl)
+        : Uri.parse('${_buildQueueEndpointUri()}/requests/$requestId/status');
+    const maxAttempts = 50;
+
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      await Future<void>.delayed(const Duration(seconds: 2));
+
+      final response = await http.get(statusUri, headers: _buildJsonHeaders());
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw VirtualFittingRequestException(
+          'fal.ai Statusabfrage fehlgeschlagen (${response.statusCode}): '
+          '${response.body}',
+        );
+      }
+
+      final statusMap = _decodeObject(response.body);
+      final status = _readString(statusMap, const ['status']) ?? 'UNKNOWN';
+      if (status == 'COMPLETED') {
+        return;
+      }
+      if (status == 'FAILED') {
+        throw VirtualFittingRequestException(
+          'fal.ai Generierung fehlgeschlagen: ${response.body}',
+        );
+      }
+      if (status == 'CANCELLED') {
+        throw const VirtualFittingRequestException(
+          'fal.ai Generierung wurde abgebrochen.',
+        );
+      }
+    }
+
+    throw const VirtualFittingRequestException(
+      'fal.ai Generierung hat das Zeitlimit ueberschritten.',
+    );
+  }
+
+  Future<Map<String, dynamic>> _fetchResult({
+    required String requestId,
+    required String? responseUrl,
+  }) async {
+    final resultUri = responseUrl != null && responseUrl.isNotEmpty
+        ? Uri.parse(responseUrl)
+        : Uri.parse('${_buildQueueEndpointUri()}/requests/$requestId');
+
+    final response = await http.get(resultUri, headers: _buildJsonHeaders());
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw VirtualFittingRequestException(
+        'fal.ai Ergebnis konnte nicht geladen werden (${response.statusCode}): '
+        '${response.body}',
+      );
+    }
+
+    return _decodeObject(response.body);
   }
 }
 
@@ -133,7 +207,46 @@ class VirtualFittingRequestException implements Exception {
   String toString() => message;
 }
 
+Map<String, dynamic> _decodeObject(String body) {
+  final decoded = jsonDecode(body);
+  if (decoded is! Map<String, dynamic>) {
+    throw const VirtualFittingRequestException(
+      'Unerwartete API-Antwort: JSON-Objekt erwartet.',
+    );
+  }
+  return decoded;
+}
+
+String? _readString(Map<String, dynamic> data, List<String> keys) {
+  for (final key in keys) {
+    final value = data[key];
+    if (value is String && value.isNotEmpty) {
+      return value;
+    }
+  }
+  return null;
+}
+
 String? _extractImageUrl(Map<String, dynamic> data) {
+  final images = data['images'];
+  if (images is List && images.isNotEmpty) {
+    final first = images.first;
+    if (first is Map<String, dynamic>) {
+      final imageUrl = first['url'];
+      if (imageUrl is String && imageUrl.isNotEmpty) {
+        return imageUrl;
+      }
+    }
+  }
+
+  final image = data['image'];
+  if (image is Map<String, dynamic>) {
+    final imageUrl = image['url'];
+    if (imageUrl is String && imageUrl.isNotEmpty) {
+      return imageUrl;
+    }
+  }
+
   final direct = data['imageUrl'] ?? data['image_url'] ?? data['url'];
   if (direct is String && direct.isNotEmpty) {
     return direct;
@@ -164,27 +277,7 @@ String? _extractImageUrl(Map<String, dynamic> data) {
   return null;
 }
 
-String? _extractBase64(Map<String, dynamic> data) {
-  final candidates = [
-    data['imageBase64'],
-    data['image_base64'],
-    data['b64_json'],
-  ];
-
-  for (final value in candidates) {
-    if (value is String && value.trim().isNotEmpty) {
-      return _normalizeBase64(value.trim());
-    }
-  }
-
-  return null;
-}
-
-String _normalizeBase64(String value) {
-  const prefix = 'base64,';
-  final index = value.indexOf(prefix);
-  if (index == -1) {
-    return value;
-  }
-  return value.substring(index + prefix.length);
+String _buildDataUri(Uint8List bytes) {
+  final base64 = base64Encode(bytes);
+  return 'data:image/jpeg;base64,$base64';
 }

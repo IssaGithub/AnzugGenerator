@@ -81,28 +81,30 @@ Die App hat einen eigenen Schritt **Virtual Fitting**:
 - KI-Vorschaubild mit Anzug/Accessoire-Kontext erzeugen
 - Ergebnis in der Zusammenfassung anzeigen
 - Ergebnisbild wird (falls vorhanden) mit der E-Mail mitgesendet
+- Vor jeder Generierung ist ein Passwort-Sicherheitscheck erforderlich
 - Wenn keine API konfiguriert ist, wird automatisch ein **Demo-Modus** genutzt
 
 Konfiguration per `--dart-define`:
 
 ```bash
 flutter run \
-  --dart-define=VIRTUAL_FIT_API_URL=https://dein-endpoint.example/api/virtual-fitting \
-  --dart-define=VIRTUAL_FIT_API_KEY=dein-api-key \
-  --dart-define=VIRTUAL_FIT_MODEL=virtual-fitting-v1
+  --dart-define=VIRTUAL_FIT_API_KEY=dein-fal-key \
+  --dart-define=VIRTUAL_FIT_MODEL=fal-ai/flux-kontext/dev \
+  --dart-define=VIRTUAL_FIT_GENERATION_PASSWORD=dein-passwort
 ```
 
-Ohne diese Variablen laeuft der Virtual-Fitting Schritt im Demo-Modus weiter
-(kein harter Fehler fuer den Nutzer).
+- Ohne `VIRTUAL_FIT_API_KEY` laeuft der Virtual-Fitting Schritt im Demo-Modus weiter.
+- Ohne `VIRTUAL_FIT_GENERATION_PASSWORD` ist die Bildgenerierung aus Sicherheitsgruenden gesperrt.
 
-### Erwartetes API-Format
+### Aktuell genutztes Model (fal.ai)
 
-`POST` Multipart mit:
-- `customer_image` (Datei)
-- `prompt` (String)
-- `model` (String)
+- Endpoint: `https://queue.fal.run/<VIRTUAL_FIT_MODEL>`
+- Standard-Model: `fal-ai/flux-kontext/dev`
+- Die App sendet Prompt + Kundenfoto (als Data-URI) an fal.ai Queue,
+  pollt den Request-Status und laedt danach das Ergebnisbild.
 
-Erwartete Antwortvarianten:
-- Bild direkt als `image/*`
-- JSON mit `imageUrl` / `image_url` / `url`
-- JSON mit `imageBase64` / `image_base64` / `b64_json`
+### Sicherheitshinweis
+
+Der Passwort-Check in der Flutter-App ist eine zusaetzliche UI-Schranke.
+Bei Web-Builds ist echter Schluesselschutz nur mit einem serverseitigen Proxy
+moeglich (fal.ai Key niemals direkt im Browser exponieren).
