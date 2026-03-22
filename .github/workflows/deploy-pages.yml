@@ -39,9 +39,12 @@ jobs:
         run: flutter pub get
 
       - name: Build Flutter web for Pages
+        env:
+          VIRTUAL_FIT_GENERATION_PASSWORD: ${{ secrets.VIRTUAL_FIT_GENERATION_PASSWORD }}
         run: |
           REPO_NAME="${GITHUB_REPOSITORY#*/}"
-          flutter build web --release --pwa-strategy=none --base-href "/${REPO_NAME}/"
+          flutter build web --release --pwa-strategy=none --base-href "/${REPO_NAME}/" \
+            --dart-define=VIRTUAL_FIT_GENERATION_PASSWORD="$VIRTUAL_FIT_GENERATION_PASSWORD"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

@@ -56,6 +56,10 @@ Nach einem erfolgreichen Run ist die App unter folgender URL erreichbar:
 Wenn GitHub Pages im Repository noch nicht aktiv ist, in den Repo-Settings unter
 **Pages** als Quelle **GitHub Actions** auswaehlen.
 
+Fuer den Passwort-Sicherheitscheck im deployed Web-Build bitte in GitHub
+unter **Settings -> Secrets and variables -> Actions** ein Repository-Secret
+`VIRTUAL_FIT_GENERATION_PASSWORD` hinterlegen.
+
 ## SMTP fuer echten E-Mail-Versand konfigurieren
 
 Der Versand nutzt `--dart-define` Konfiguration:
