@@ -38,6 +38,18 @@ flutter pub get
 flutter run
 ```
 
+## GitHub Pages (Web-Preview)
+
+Es gibt einen Workflow fuer Deployment nach GitHub Pages:
+- Datei: `.github/workflows/deploy-pages.yml`
+- Trigger: Push auf `main` oder `cursor/suit-configuration-app-a05a`, sowie manuell per `workflow_dispatch`
+
+Nach einem erfolgreichen Run ist die App unter folgender URL erreichbar:
+`https://issagithub.github.io/AnzugGenerator/`
+
+Wenn GitHub Pages im Repository noch nicht aktiv ist, in den Repo-Settings unter
+**Pages** als Quelle **GitHub Actions** auswaehlen.
+
 ## SMTP fuer echten E-Mail-Versand konfigurieren
 
 Der Versand nutzt `--dart-define` Konfiguration:
