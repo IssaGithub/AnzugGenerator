@@ -49,13 +49,39 @@ jobs:
           path: build/web
 
   deploy:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/cursor/suit-configuration-app-a05a'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     needs: build
     steps:
+      - name: Check whether GitHub Pages is enabled
+        id: pages_check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              await github.request('GET /repos/{owner}/{repo}/pages', {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+              });
+              core.setOutput('enabled', 'true');
+              core.info('GitHub Pages is enabled.');
+            } catch (error) {
+              if (error.status === 404) {
+                core.setOutput('enabled', 'false');
+                core.warning('GitHub Pages is not enabled. Deployment will be skipped.');
+              } else {
+                throw error;
+              }
+            }
+
+      - name: Skip deploy when Pages is disabled
+        if: steps.pages_check.outputs.enabled != 'true'
+        run: echo "GitHub Pages disabled -> skipping deploy step."
+
       - name: Deploy to GitHub Pages
         id: deployment
+        if: steps.pages_check.outputs.enabled == 'true'
         uses: actions/deploy-pages@v4
