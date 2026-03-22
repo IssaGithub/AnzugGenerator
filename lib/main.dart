@@ -419,21 +419,21 @@ class _SuitConfiguratorPageState extends State<SuitConfiguratorPage> {
             width: double.infinity,
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: Colors.amber.shade100,
+              color: Colors.lightBlue.shade50,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.amber.shade700),
+              border: Border.all(color: Colors.lightBlue.shade300),
             ),
             child: const Text(
               'Virtual Fitting API ist nicht konfiguriert. '
-              'Setzen Sie --dart-define fuer VIRTUAL_FIT_API_URL, '
-              'VIRTUAL_FIT_API_KEY und optional VIRTUAL_FIT_MODEL.',
+              'Es wird automatisch der Demo-Modus verwendet. '
+              'Fuer echte KI-Generierung setzen Sie --dart-define '
+              'fuer VIRTUAL_FIT_API_URL, VIRTUAL_FIT_API_KEY und optional '
+              'VIRTUAL_FIT_MODEL.',
             ),
           ),
         const SizedBox(height: 12),
         ElevatedButton.icon(
-          onPressed: _customerImageBytes == null ||
-                  _isGeneratingFitting ||
-                  !_virtualFittingService.isConfigured
+          onPressed: _customerImageBytes == null || _isGeneratingFitting
               ? null
               : _generateFittingImage,
           icon: _isGeneratingFitting
@@ -444,7 +444,11 @@ class _SuitConfiguratorPageState extends State<SuitConfiguratorPage> {
                 )
               : const Icon(Icons.auto_awesome),
           label: Text(
-            _isGeneratingFitting ? 'Generiere...' : 'KI-Bild generieren',
+            _isGeneratingFitting
+                ? 'Generiere...'
+                : (_virtualFittingService.isConfigured
+                      ? 'KI-Bild generieren'
+                      : 'Demo-Vorschau generieren'),
           ),
         ),
         const SizedBox(height: 12),
@@ -641,19 +645,29 @@ class _SuitConfiguratorPageState extends State<SuitConfiguratorPage> {
       _showMessage('Bitte zuerst ein Kundenfoto auswaehlen.');
       return;
     }
-    if (!_virtualFittingService.isConfigured) {
-      _showMessage(
-        'Virtual Fitting API ist nicht konfiguriert. '
-        'Bitte --dart-define Werte setzen.',
-      );
-      return;
-    }
 
     setState(() {
       _isGeneratingFitting = true;
     });
 
     try {
+      if (!_virtualFittingService.isConfigured) {
+        // Demo-Fallback: Originalfoto als Vorschau verwenden, damit die
+        // Funktion ohne Backend sofort erlebbar ist.
+        await Future<void>.delayed(const Duration(milliseconds: 350));
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _generatedFittingImageBytes = customerImageBytes;
+          _fittingSourceUrl = 'demo://local-preview';
+        });
+        _showMessage(
+          'Demo-Vorschau erstellt. Fuer echte KI-Bilder bitte API konfigurieren.',
+        );
+        return;
+      }
+
       final result = await _virtualFittingService.generateFittingImage(
         customerPhotoBytes: customerImageBytes,
         prompt: _buildVirtualFittingPrompt(),

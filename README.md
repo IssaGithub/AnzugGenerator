@@ -81,6 +81,7 @@ Die App hat einen eigenen Schritt **Virtual Fitting**:
 - KI-Vorschaubild mit Anzug/Accessoire-Kontext erzeugen
 - Ergebnis in der Zusammenfassung anzeigen
 - Ergebnisbild wird (falls vorhanden) mit der E-Mail mitgesendet
+- Wenn keine API konfiguriert ist, wird automatisch ein **Demo-Modus** genutzt
 
 Konfiguration per `--dart-define`:
 
@@ -90,6 +91,9 @@ flutter run \
   --dart-define=VIRTUAL_FIT_API_KEY=dein-api-key \
   --dart-define=VIRTUAL_FIT_MODEL=virtual-fitting-v1
 ```
+
+Ohne diese Variablen laeuft der Virtual-Fitting Schritt im Demo-Modus weiter
+(kein harter Fehler fuer den Nutzer).
 
 ### Erwartetes API-Format
 
