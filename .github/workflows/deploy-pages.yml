@@ -1,0 +1,190 @@
+name: Deploy Flutter Web to GitHub Pages
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - cursor/suit-configuration-app-a05a
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Print Flutter version
+        run: flutter --version
+
+      - name: Ensure web platform files exist
+        run: flutter create . --platforms=web
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Flutter web for Pages
+        env:
+          VIRTUAL_FIT_GENERATION_PASSWORD: ${{ secrets.VIRTUAL_FIT_GENERATION_PASSWORD }}
+        run: |
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          flutter build web --release --pwa-strategy=none --base-href "/${REPO_NAME}/" \
+            --dart-define=VIRTUAL_FIT_GENERATION_PASSWORD="$VIRTUAL_FIT_GENERATION_PASSWORD"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  precheck_deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    outputs:
+      pages_enabled: ${{ steps.check.outputs.pages_enabled }}
+      branch_allowed: ${{ steps.check.outputs.branch_allowed }}
+      can_deploy: ${{ steps.check.outputs.can_deploy }}
+      reason: ${{ steps.check.outputs.reason }}
+    steps:
+      - name: Check Pages and branch policy
+        id: check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const branch = context.ref.replace('refs/heads/', '');
+
+            let pagesEnabled = false;
+            let branchAllowed = branch === 'main';
+            let reason = '';
+
+            try {
+              await github.request('GET /repos/{owner}/{repo}/pages', {
+                owner,
+                repo,
+              });
+              pagesEnabled = true;
+            } catch (error) {
+              if (error.status === 404) {
+                reason = 'GitHub Pages ist nicht aktiviert.';
+              } else {
+                throw error;
+              }
+            }
+
+            if (pagesEnabled && branch !== 'main') {
+              try {
+                const environmentResponse = await github.request(
+                  'GET /repos/{owner}/{repo}/environments/{environment_name}',
+                  {
+                    owner,
+                    repo,
+                    environment_name: 'github-pages',
+                  },
+                );
+
+                const policy = environmentResponse.data.deployment_branch_policy;
+
+                if (policy?.custom_branch_policies) {
+                  const policyResponse = await github.request(
+                    'GET /repos/{owner}/{repo}/environments/{environment_name}/deployment-branch-policies',
+                    {
+                      owner,
+                      repo,
+                      environment_name: 'github-pages',
+                    },
+                  );
+
+                  const policies = policyResponse.data.branch_policies ?? [];
+                  const wildcardToRegex = (pattern) => {
+                    const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+                    return new RegExp(`^${escaped.replaceAll('*', '.*')}$`);
+                  };
+
+                  branchAllowed = policies.some((entry) =>
+                    wildcardToRegex(entry.name).test(branch),
+                  );
+                } else if (policy?.protected_branches) {
+                  try {
+                    await github.request(
+                      'GET /repos/{owner}/{repo}/branches/{branch}/protection',
+                      {
+                        owner,
+                        repo,
+                        branch,
+                      },
+                    );
+                    branchAllowed = true;
+                  } catch (error) {
+                    branchAllowed = false;
+                  }
+                } else {
+                  branchAllowed = true;
+                }
+              } catch (error) {
+                core.warning(`Konnte Deployment-Policy nicht lesen: ${error.message}`);
+                branchAllowed = false;
+              }
+            }
+
+            if (!branchAllowed && reason.length === 0) {
+              reason = `Branch "${branch}" ist durch github-pages Environment-Policy nicht freigegeben.`;
+            }
+
+            const canDeploy = pagesEnabled && branchAllowed;
+
+            core.info(`pagesEnabled=${pagesEnabled}, branchAllowed=${branchAllowed}, canDeploy=${canDeploy}`);
+            if (!canDeploy && reason.length > 0) {
+              core.warning(reason);
+            }
+
+            core.setOutput('pages_enabled', pagesEnabled ? 'true' : 'false');
+            core.setOutput('branch_allowed', branchAllowed ? 'true' : 'false');
+            core.setOutput('can_deploy', canDeploy ? 'true' : 'false');
+            core.setOutput('reason', reason);
+
+  deploy:
+    if: needs.precheck_deploy.outputs.can_deploy == 'true'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: [build, precheck_deploy]
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  deploy_fallback:
+    if: needs.precheck_deploy.outputs.pages_enabled == 'true' && needs.precheck_deploy.outputs.branch_allowed != 'true'
+    runs-on: ubuntu-latest
+    needs: [build, precheck_deploy]
+    steps:
+      - name: Deploy to GitHub Pages (fallback without environment gate)
+        id: deployment_fallback
+        uses: actions/deploy-pages@v4
+
+  skip_deploy:
+    if: needs.precheck_deploy.outputs.pages_enabled != 'true'
+    runs-on: ubuntu-latest
+    needs: [build, precheck_deploy]
+    steps:
+      - name: Explain skipped deployment
+        run: |
+          echo "Deploy wurde uebersprungen."
+          echo "${{ needs.precheck_deploy.outputs.reason }}"
