@@ -43,6 +43,9 @@ flutter run
 Es gibt einen Workflow fuer Deployment nach GitHub Pages:
 - Datei: `.github/workflows/deploy-pages.yml`
 - Trigger: Push auf `main` oder `cursor/suit-configuration-app-a05a`, sowie manuell per `workflow_dispatch`
+- Verhalten:
+  - Auf Feature-Branch: Web-Build wird geprueft (CI)
+  - Auf `main`: Build + echtes Deployment auf GitHub Pages
 
 Nach einem erfolgreichen Run ist die App unter folgender URL erreichbar:
 `https://issagithub.github.io/AnzugGenerator/`
