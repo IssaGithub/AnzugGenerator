@@ -1,6 +1,43 @@
 import '../models/config_field.dart';
 
-// TODO: Optionen 1:1 aus dem angehaengten PDF uebernehmen, sobald es vorliegt.
+const List<String> monogramFonts = [
+  'Druckschrift',
+  'Calligraphy',
+];
+
+const List<String> threadColourCardOptions = [
+  'white',
+  'sand',
+  'light blue',
+  'pink',
+  'off-white',
+  'light-brown',
+  'sky blue',
+  'red',
+  'mid-grey',
+  'dark brown',
+  'slate blue',
+  'orange',
+  'silver',
+  'mid-brown',
+  'royal blue',
+  'dark red',
+  'anthracite',
+  'light green',
+  'midnight blue',
+  'oxide red',
+  'light grey',
+  'chocolate brown',
+  'navy blue',
+  'wine red',
+  'black',
+  'forest green',
+  'purple',
+  'gold',
+  'dark green',
+  'violet',
+];
+
 const List<ConfigSection> suitConfigurationSections = [
   ConfigSection(
     title: 'Sakko',
@@ -89,6 +126,158 @@ const List<ConfigSection> suitConfigurationSections = [
         key: 'monogram',
         label: 'Monogramm',
         options: ['Kein Monogramm', 'Initialen innen', 'Initialen sichtbar'],
+      ),
+    ],
+  ),
+  ConfigSection(
+    title: 'Accessoires - Krawatte (PDF)',
+    fields: [
+      ConfigField(
+        key: 'tie_processing',
+        label: 'Verarbeitung',
+        options: [
+          'Tipped',
+          'Untipped',
+          'Bobtail',
+          '7-fach gefaltet tipped',
+          '7-fach gefaltet untipped',
+        ],
+      ),
+      ConfigField(
+        key: 'tie_width',
+        label: 'Weite',
+        options: ['5,5 cm (nur Bobtail)', '6 cm', '7 cm', '8 cm', '9 cm'],
+      ),
+      ConfigField(
+        key: 'tie_length',
+        label: 'Laenge',
+        options: ['Standard (148 cm)', 'Lang (165 cm)', 'Extra lang (175 cm)'],
+      ),
+      ConfigField(
+        key: 'tie_monogram_position',
+        label: 'Monogramm Positionierung',
+        options: [
+          'Vorderseite 3 cm von unten',
+          'Vorderseite 38 cm von unten',
+          'In Fuetterung (Rueckseite der Krawatte)',
+          'Auf der Spitze',
+        ],
+        helperText:
+            'Hinweis laut PDF: Monogramm nicht fuer Untipped und Bobtail.',
+      ),
+      ConfigField(
+        key: 'tie_monogram_font',
+        label: 'Monogrammschrift',
+        options: monogramFonts,
+      ),
+      ConfigField(
+        key: 'tie_monogram_text',
+        label: 'Monogramm Text',
+        type: ConfigFieldType.text,
+        placeholder: 'z. B. MT',
+      ),
+      ConfigField(
+        key: 'tie_thread_colour',
+        label: 'Thread colour card',
+        options: threadColourCardOptions,
+      ),
+    ],
+  ),
+  ConfigSection(
+    title: 'Accessoires - Fliege (PDF)',
+    fields: [
+      ConfigField(
+        key: 'bow_tie_processing',
+        label: 'Verarbeitung',
+        options: ['Vorgebunden', 'Vorgefaltet', 'Selbstbinder'],
+      ),
+      ConfigField(
+        key: 'bow_tie_width',
+        label: 'Weite',
+        options: ['6 cm', '7 cm', '8 cm'],
+      ),
+      ConfigField(
+        key: 'bow_tie_monogram_position',
+        label: 'Monogramm Positionierung',
+        options: ['Aeusseres Band selbstbinder', 'Aeusseres Band vorgebunden'],
+      ),
+      ConfigField(
+        key: 'bow_tie_monogram_font',
+        label: 'Monogrammschrift',
+        options: monogramFonts,
+      ),
+      ConfigField(
+        key: 'bow_tie_monogram_text',
+        label: 'Monogramm Text',
+        type: ConfigFieldType.text,
+        placeholder: 'z. B. ABCD',
+      ),
+      ConfigField(
+        key: 'bow_tie_thread_colour',
+        label: 'Thread colour card',
+        options: threadColourCardOptions,
+      ),
+    ],
+  ),
+  ConfigSection(
+    title: 'Accessoires - Einstecktuch (PDF)',
+    fields: [
+      ConfigField(
+        key: 'pocket_square_processing',
+        label: 'Verarbeitung',
+        options: ['Von Hand rolliert', 'Von Hand bestickt'],
+      ),
+      ConfigField(
+        key: 'pocket_square_monogram_position',
+        label: 'Monogramm Positionierung',
+        options: ['Ecke diagonal', 'Ecke gerade', 'Mittig', 'Rand'],
+      ),
+      ConfigField(
+        key: 'pocket_square_monogram_font',
+        label: 'Monogrammschrift',
+        options: monogramFonts,
+      ),
+      ConfigField(
+        key: 'pocket_square_monogram_text',
+        label: 'Monogramm Text',
+        type: ConfigFieldType.text,
+        placeholder: 'z. B. MT',
+      ),
+      ConfigField(
+        key: 'pocket_square_thread_colour',
+        label: 'Thread colour card',
+        options: threadColourCardOptions,
+      ),
+    ],
+  ),
+  ConfigSection(
+    title: 'Accessoires - Cummerbund (PDF)',
+    fields: [
+      ConfigField(
+        key: 'cummerbund_model',
+        label: 'Model',
+        options: ['Vorderseite', 'Rueckseite'],
+      ),
+      ConfigField(
+        key: 'cummerbund_monogram_position',
+        label: 'Monogramm Positionierung',
+        options: ['Aussen rechts'],
+      ),
+      ConfigField(
+        key: 'cummerbund_monogram_font',
+        label: 'Monogrammschrift',
+        options: monogramFonts,
+      ),
+      ConfigField(
+        key: 'cummerbund_monogram_text',
+        label: 'Monogramm Text',
+        type: ConfigFieldType.text,
+        placeholder: 'z. B. AbC',
+      ),
+      ConfigField(
+        key: 'cummerbund_thread_colour',
+        label: 'Thread colour card',
+        options: threadColourCardOptions,
       ),
     ],
   ),

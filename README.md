@@ -12,13 +12,19 @@ Flutter-App fuer die Konfiguration von Anzuegen mit:
 - `lib/services/email_service.dart`: SMTP-Versand inkl. Signatur-Anhang
 - `lib/services/order_summary_builder.dart`: Bestelltext fuer Anzeige und E-Mail
 - `lib/models/*`: Datenmodelle
+- `docs/Accessories_DesignOptions.pdf`: PDF-Grundlage fuer Accessoires
 
-## Wichtig zum PDF
+## PDF-Stand
 
-Das vom Auftrag genannte PDF war in diesem Workspace nicht verfuegbar.
-Die Konfigurationspunkte sind daher als saubere Platzhalter in
-`lib/data/suit_config_template.dart` hinterlegt und koennen dort direkt
-1:1 mit den PDF-Feldern ersetzt werden.
+Das Dokument `Accessories_DesignOptions.pdf` liegt im Workspace unter:
+`docs/Accessories_DesignOptions.pdf`.
+
+Die Accessoire-Konfigurationen in `lib/data/suit_config_template.dart`
+wurden auf Basis des PDFs erweitert:
+- Krawatte (Verarbeitung, Weite, Laenge, Monogramm, Thread colour card)
+- Fliege (Verarbeitung, Weite, Monogramm, Thread colour card)
+- Einstecktuch (Verarbeitung, Monogramm, Thread colour card)
+- Cummerbund (Model, Monogramm, Thread colour card)
 
 ## Voraussetzungen
 

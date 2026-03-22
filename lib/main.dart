@@ -69,6 +69,7 @@ class _SuitConfiguratorPageState extends State<SuitConfiguratorPage> {
 
   int _currentStep = 0;
   bool _isSending = false;
+  int _formVersion = 0;
 
   @override
   void initState() {
@@ -88,7 +89,11 @@ class _SuitConfiguratorPageState extends State<SuitConfiguratorPage> {
       allowInsecure: _smtpAllowInsecure,
     );
     _selectedValues = {
-      for (final field in allConfigFields) field.key: field.options.first,
+      for (final field in allConfigFields)
+        field.key: field.type == ConfigFieldType.dropdown &&
+                field.options.isNotEmpty
+            ? field.options.first
+            : '',
     };
   }
 
@@ -275,14 +280,36 @@ class _SuitConfiguratorPageState extends State<SuitConfiguratorPage> {
   }
 
   Widget _buildConfigField(ConfigField field) {
+    if (field.type == ConfigFieldType.text) {
+      return TextFormField(
+        key: ValueKey('${field.key}_$_formVersion'),
+        initialValue: _selectedValues[field.key] ?? '',
+        decoration: InputDecoration(
+          labelText: field.label,
+          helperText: field.helperText,
+          hintText: field.placeholder,
+          border: const OutlineInputBorder(),
+        ),
+        onChanged: (value) {
+          _selectedValues[field.key] = value;
+        },
+      );
+    }
+
+    final availableOptions = field.options;
+    final currentValue = _selectedValues[field.key];
+    final selectedValue = availableOptions.contains(currentValue)
+        ? currentValue
+        : (availableOptions.isNotEmpty ? availableOptions.first : null);
+
     return DropdownButtonFormField<String>(
-      value: _selectedValues[field.key],
+      value: selectedValue,
       decoration: InputDecoration(
         labelText: field.label,
         helperText: field.helperText,
         border: const OutlineInputBorder(),
       ),
-      items: field.options
+      items: availableOptions
           .map(
             (option) => DropdownMenuItem<String>(
               value: option,
@@ -443,9 +470,14 @@ class _SuitConfiguratorPageState extends State<SuitConfiguratorPage> {
     _signatureController.clear();
     setState(() {
       _selectedValues = {
-        for (final field in allConfigFields) field.key: field.options.first,
+        for (final field in allConfigFields)
+          field.key: field.type == ConfigFieldType.dropdown &&
+                  field.options.isNotEmpty
+              ? field.options.first
+              : '',
       };
       _currentStep = 0;
+      _formVersion += 1;
     });
   }
 

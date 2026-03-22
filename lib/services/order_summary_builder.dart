@@ -16,6 +16,9 @@ String buildOrderSummary(
     ..writeln('Konfiguration');
 
   for (final entry in order.selections.entries) {
+    if (entry.value.trim().isEmpty) {
+      continue;
+    }
     final label = fieldLabels[entry.key] ?? entry.key;
     buffer.writeln('- $label: ${entry.value}');
   }
