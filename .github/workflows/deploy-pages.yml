@@ -52,6 +52,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     outputs:
+      pages_enabled: ${{ steps.check.outputs.pages_enabled }}
+      branch_allowed: ${{ steps.check.outputs.branch_allowed }}
       can_deploy: ${{ steps.check.outputs.can_deploy }}
       reason: ${{ steps.check.outputs.reason }}
     steps:
@@ -148,6 +150,8 @@ jobs:
               core.warning(reason);
             }
 
+            core.setOutput('pages_enabled', pagesEnabled ? 'true' : 'false');
+            core.setOutput('branch_allowed', branchAllowed ? 'true' : 'false');
             core.setOutput('can_deploy', canDeploy ? 'true' : 'false');
             core.setOutput('reason', reason);
 
@@ -163,8 +167,17 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
 
+  deploy_fallback:
+    if: needs.precheck_deploy.outputs.pages_enabled == 'true' && needs.precheck_deploy.outputs.branch_allowed != 'true'
+    runs-on: ubuntu-latest
+    needs: [build, precheck_deploy]
+    steps:
+      - name: Deploy to GitHub Pages (fallback without environment gate)
+        id: deployment_fallback
+        uses: actions/deploy-pages@v4
+
   skip_deploy:
-    if: needs.precheck_deploy.outputs.can_deploy != 'true'
+    if: needs.precheck_deploy.outputs.pages_enabled != 'true'
     runs-on: ubuntu-latest
     needs: [build, precheck_deploy]
     steps:

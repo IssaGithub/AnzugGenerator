@@ -45,7 +45,8 @@ Es gibt einen Workflow fuer Deployment nach GitHub Pages:
 - Trigger: Push auf `main` oder `cursor/suit-configuration-app-a05a`, sowie manuell per `workflow_dispatch`
 - Verhalten:
   - Auf Feature-Branch: Web-Build + Deployment-Versuch
-  - Wenn GitHub Pages deaktiviert ist oder der Branch durch Environment-Policy nicht freigegeben ist, wird Deploy sauber geskippt (kein Pipeline-Fehler)
+  - Wenn der Branch durch Environment-Policy nicht freigegeben ist, wird ein Fallback-Deploy ohne Environment-Gate versucht
+  - Wenn GitHub Pages deaktiviert ist, wird Deploy sauber geskippt (kein Pipeline-Fehler)
   - Auf `main`: Build + echtes Deployment auf GitHub Pages
 
 Nach einem erfolgreichen Run ist die App unter folgender URL erreichbar:
